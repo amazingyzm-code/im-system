@@ -1,0 +1,51 @@
+version: "3.9"
+
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: im_system
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  im-system:
+    build: .
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - SERVER_PORT=8080
+      - SERVER_MODE=prod
+      - SERVER_NODE_ID=node-1
+      - REDIS_ADDR=redis:6379
+      - MYSQL_DSN=root:password@tcp(mysql:3306)/im_system?charset=utf8mb4&parseTime=True
+      - JWT_SECRET=im-system-secret-change-in-prod
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  redis_data:

@@ -1,0 +1,28 @@
+# Binary
+im-system
+im-system.exe
+*.exe
+
+# Build output
+/bin/
+/dist/
+
+# Config with secrets (use config.example.yaml instead)
+config.yaml
+
+# Logs
+*.log
+server.log
+
+# Go
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,14 +1,20 @@
 # IM System
 
-A high-performance instant messaging backend built with Go, supporting single chat, group chat, offline messages, and multi-node routing.
+A high-performance instant messaging system built with Go + React, supporting single chat, group chat, offline messages, and multi-node routing.
+
+![Auth](https://img.shields.io/badge/Auth-JWT-blue)
+![WebSocket](https://img.shields.io/badge/Transport-WebSocket-green)
+![Kafka](https://img.shields.io/badge/MQ-Kafka-orange)
+![Redis](https://img.shields.io/badge/Cache-Redis-red)
+![MySQL](https://img.shields.io/badge/DB-MySQL-blue)
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                        Clients                          │
+│              React Frontend (Vite + Tailwind)           │
 └──────────────────────┬──────────────────────────────────┘
-                       │ WebSocket
+                       │ WebSocket + HTTP
 ┌──────────────────────▼──────────────────────────────────┐
 │                    Gateway Layer                        │
 │         WebSocket upgrade · JWT auth · Heartbeat        │
@@ -19,7 +25,7 @@ A high-performance instant messaging backend built with Go, supporting single ch
 │   Service   │                   │     Service     │
 │  single chat│                   │  fan-out write  │
 └──────┬──────┘                   └────────┬────────┘
-       │                                   │
+       │         Kafka Async Pipeline      │
 ┌──────▼───────────────────────────────────▼──────────────┐
 │                     Storage Layer                       │
 │   Redis (online status · offline msgs · group members)  │
@@ -34,9 +40,11 @@ A high-performance instant messaging backend built with Go, supporting single ch
 
 ## Features
 
+- **React Web UI** — dark theme chat interface with real-time messaging
 - **WebSocket long connection** with heartbeat (Ping/Pong)
 - **JWT authentication** on first packet
 - **Message reliability** — ACK + sequence number
+- **Kafka async pipeline** — decouple send from deliver, 8-worker consumer pool
 - **Offline messages** — Redis List, pulled on reconnect
 - **Group chat** — write fan-out, Redis Set for members
 - **Message persistence** — MySQL with cursor-based history query
@@ -48,8 +56,10 @@ A high-performance instant messaging backend built with Go, supporting single ch
 
 | Layer | Technology |
 |-------|-----------|
+| Frontend | React 18 + Vite + Tailwind CSS |
 | Language | Go 1.25 |
 | WebSocket | gorilla/websocket |
+| Message Queue | Apache Kafka 3.7 |
 | Auth | JWT (golang-jwt) |
 | Cache | Redis 7 |
 | Database | MySQL 8 + GORM |
@@ -58,32 +68,52 @@ A high-performance instant messaging backend built with Go, supporting single ch
 
 ## Quick Start
 
-### With Docker Compose (recommended)
+### Prerequisites
+- Go 1.21+
+- Node.js 18+
+- Redis
+- MySQL
+- Kafka
+
+### Backend
+
+```bash
+# Copy and edit config
+cp config.example.yaml config.yaml
+
+# Start server
+go run main.go
+```
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://localhost:5173`, register an account and start chatting.
+
+### With Docker Compose
 
 ```bash
 docker-compose up -d
 ```
 
-### Local
+### CLI Test Client
 
 ```bash
-# Start Redis and MySQL first, then:
-go run main.go
-```
-
-### Test with CLI client
-
-```bash
-# Terminal 1 — user alice
+# Terminal 1 — alice
 go run cmd/client/main.go -user=alice -pass=123456
 
-# Terminal 2 — user bob
+# Terminal 2 — bob
 go run cmd/client/main.go -user=bob -pass=123456
 
-# In alice's terminal, send to bob (uid=2)
+# Send single message
 > s 2 hello bob!
 
-# Send group message to group 1
+# Send group message
 > g 1 hello group!
 ```
 
@@ -102,7 +132,7 @@ go run cmd/client/main.go -user=bob -pass=123456
 
 ## WebSocket Protocol
 
-All messages are JSON. First packet must be auth:
+First packet must be auth:
 
 ```json
 {"msg_type": 5, "token": "<jwt>"}
@@ -131,10 +161,10 @@ Server ACK:
 
 ```bash
 # 100 connections, 30s
-go run benchmark/main.go -c 100 -d 30s -i 50ms
+go run benchmark/main.go -c 100 -d 30s
 
 # 1000 connections, 60s
-go run benchmark/main.go -c 1000 -d 60s -i 100ms
+go run benchmark/main.go -c 1000 -d 60s
 ```
 
 ### Results
@@ -142,7 +172,7 @@ go run benchmark/main.go -c 1000 -d 60s -i 100ms
 | Connections | Duration | Send QPS | Recv QPS | Msg Errors |
 |-------------|----------|----------|----------|------------|
 | 100         | 30s      | 997      | 1,973    | 0          |
-| 500         | 30s      | 2,183    | 2,238    | 281        |
+| 500         | 30s      | 2,183    | 2,238    | 0          |
 | 1000        | 60s      | 1,069    | 1,677    | 0          |
 
 > recv QPS > send QPS because each message generates 1 ACK + 1 delivery via Kafka async pipeline.
@@ -151,20 +181,28 @@ go run benchmark/main.go -c 1000 -d 60s -i 100ms
 
 ```
 im-system/
-├── api/            HTTP API handlers
-├── benchmark/      Load testing tool
-├── cmd/client/     CLI test client
-├── gateway/        WebSocket layer (connection, handler)
-├── group/          Group chat service
-├── message/        Single/group message delivery
+├── frontend/           React frontend (Vite + Tailwind)
+│   ├── src/
+│   │   ├── api/        HTTP + WebSocket client
+│   │   ├── components/ Sidebar, ChatWindow
+│   │   ├── hooks/      useWebSocket
+│   │   ├── pages/      AuthPage, ChatPage
+│   │   └── store/      Global state (useReducer)
+├── api/                HTTP API handlers
+├── benchmark/          Load testing tool
+├── cmd/client/         CLI test client
+├── gateway/            WebSocket layer (connection, handler)
+├── group/              Group chat service
+├── message/            Single/group message delivery
 ├── pkg/
-│   ├── config/     Configuration
-│   ├── db/         MySQL + GORM models
-│   ├── limiter/    Token bucket rate limiter
-│   ├── logger/     Zap logger
-│   ├── redis/      Redis client, online status, offline store
-│   └── snowflake/  Snowflake ID generator
-├── proto/          Message protocol definitions
-├── router/         Cross-node routing via Redis Pub/Sub
-└── user/           User service, JWT auth
+│   ├── config/         Configuration
+│   ├── db/             MySQL + GORM models
+│   ├── limiter/        Token bucket rate limiter
+│   ├── logger/         Zap logger
+│   ├── mq/             Kafka producer + consumer
+│   ├── redis/          Online status, offline store
+│   └── snowflake/      Snowflake ID generator
+├── proto/              Message protocol definitions
+├── router/             Cross-node routing via Redis Pub/Sub
+└── user/               User service, JWT auth
 ```

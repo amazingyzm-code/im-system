@@ -17,6 +17,10 @@ server.log
 # Go
 vendor/
 
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
 # IDE
 .idea/
 .vscode/
